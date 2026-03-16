@@ -5,12 +5,13 @@ import { getFirestore } from 'firebase/firestore';
 // Reemplaza estos valores con los de tu consola de Firebase
 // (Project Settings > General > Your apps)
 const firebaseConfig = {
-  apiKey: "TU_API_KEY",
-  authDomain: "tu-proyecto.firebaseapp.com",
-  projectId: "tu-proyecto-id",
-  storageBucket: "tu-proyecto.appspot.com",
-  messagingSenderId: "tu-sender-id",
-  appId: "tu-app-id"
+  apiKey: "AIzaSyDMby6xcKewRFFsD37guTNvnACCTrfsJXw",
+  authDomain: "remespro.firebaseapp.com",
+  projectId: "remespro",
+  storageBucket: "remespro.firebasestorage.app",
+  messagingSenderId: "640472258610",
+  appId: "1:640472258610:web:5be467f2c043ed50ab842b",
+  measurementId: "G-NKLC3P46F4"
 };
 
 // Initialize Firebase
