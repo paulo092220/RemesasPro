@@ -19,8 +19,13 @@ import {
   Trash2,
   Edit3,
   Menu,
-  X
+  X,
+  Download,
+  Upload,
+  FileText
 } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'workers' | 'caja' | 'settings'>('dashboard');
@@ -128,6 +133,15 @@ const App: React.FC = () => {
     setShowResetConfirm(false);
   };
 
+  const handleRestoreData = (data: any) => {
+    if (data.transactions) setTransactions(data.transactions);
+    if (data.workers) setWorkers(data.workers);
+    if (data.pairs) setPairs(data.pairs);
+    if (data.funds) setFunds(data.funds);
+    if (data.referenceRates) setReferenceRates(data.referenceRates);
+    alert("Datos restaurados correctamente");
+  };
+
   const profits = useMemo(() => {
     let totalCUP = 0;
     transactions.forEach(tx => {
@@ -233,6 +247,8 @@ const App: React.FC = () => {
             onToggleFavorite={(id) => setPairs(pairs.map(p => p.id === id ? { ...p, isFavorite: !p.isFavorite } : p))} 
             onAddPair={(b, t) => setPairs([...pairs, { id: `${b}-${t}`, base: b, target: t, isFavorite: true }])} 
             onResetRequest={() => setShowResetConfirm(true)}
+            onRestoreData={handleRestoreData}
+            fullState={{ transactions, workers, pairs, funds, referenceRates }}
           />
         )}
       </main>
@@ -384,52 +400,108 @@ const DashboardView: React.FC<{
   );
 };
 
-const TransactionsView: React.FC<{ transactions: Transaction[], workers: Worker[], onDelete: (id: string) => void }> = ({ transactions, workers, onDelete }) => (
-  <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-    <div className="overflow-x-auto">
-      <table className="w-full text-left">
-        <thead className="bg-gray-50/50 border-b border-gray-100">
-          <tr>
-            <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Fecha / Destino</th>
-            <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Recibo</th>
-            <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Entrega</th>
-            <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Tasa</th>
-            <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider"></th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {transactions.map(tx => (
-            <tr key={tx.id} className="hover:bg-gray-50 group">
-              <td className="px-6 py-4">
-                <div className="font-bold text-gray-800">{tx.clientName || 'Cliente sin nombre'}</div>
-                <div className="text-[10px] text-gray-400">Trabajador: {workers.find(w => w.id === tx.workerId)?.name || 'Sin nombre'}</div>
-                <div className="text-[10px] text-gray-400">{new Date(tx.date).toLocaleString()}</div>
-              </td>
-              <td className="px-6 py-4">
-                <div className="flex items-center gap-1">
-                  <ArrowDownLeft size={12} className="text-emerald-500" />
-                  <span className="font-black">{tx.amount.toLocaleString()}</span>
-                  <span className="text-[10px] text-gray-400">{tx.currency}</span>
-                </div>
-              </td>
-              <td className="px-6 py-4">
-                <div className="flex items-center gap-1">
-                  <ArrowUpRight size={12} className="text-rose-500" />
-                  <span className="font-black text-blue-600">{tx.totalCUP.toLocaleString()}</span>
-                  <span className="text-[10px] text-blue-300">{tx.targetCurrency}</span>
-                </div>
-              </td>
-              <td className="px-6 py-4 font-mono text-xs">1:{tx.rate}</td>
-              <td className="px-6 py-4 text-right">
-                <button onClick={() => onDelete(tx.id)} className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all"><Trash2 size={16}/></button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+const TransactionsView: React.FC<{ transactions: Transaction[], workers: Worker[], onDelete: (id: string) => void }> = ({ transactions, workers, onDelete }) => {
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter(tx => {
+      if (!startDate && !endDate) return true;
+      const txDate = new Date(tx.date).getTime();
+      const start = startDate ? new Date(startDate).getTime() : 0;
+      const end = endDate ? new Date(endDate).getTime() + 86400000 : Infinity; // Include the whole end day
+      return txDate >= start && txDate <= end;
+    });
+  }, [transactions, startDate, endDate]);
+
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    doc.text("Historial de Remesas", 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Desde: ${startDate ? new Date(startDate).toLocaleDateString() : 'Inicio'} Hasta: ${endDate ? new Date(endDate).toLocaleDateString() : 'Hoy'}`, 14, 22);
+
+    const tableData = filteredTransactions.map(tx => [
+      new Date(tx.date).toLocaleDateString(),
+      tx.clientName || 'Sin nombre',
+      workers.find(w => w.id === tx.workerId)?.name || 'Sin nombre',
+      `${tx.amount} ${tx.currency}`,
+      `${tx.totalCUP} ${tx.targetCurrency}`,
+      `1:${tx.rate}`
+    ]);
+
+    autoTable(doc, {
+      startY: 28,
+      head: [['Fecha', 'Cliente', 'Trabajador', 'Recibo', 'Entrega', 'Tasa']],
+      body: tableData,
+    });
+
+    doc.save(`remesas_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 flex flex-col sm:flex-row gap-4 items-end justify-between">
+        <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+          <div className="space-y-1 flex-1 sm:flex-none">
+            <label className="text-[10px] font-black text-gray-400 uppercase">Desde</label>
+            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none" />
+          </div>
+          <div className="space-y-1 flex-1 sm:flex-none">
+            <label className="text-[10px] font-black text-gray-400 uppercase">Hasta</label>
+            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none" />
+          </div>
+        </div>
+        <button onClick={exportPDF} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors w-full sm:w-auto justify-center">
+          <FileText size={18} /> Exportar PDF
+        </button>
+      </div>
+      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-gray-50/50 border-b border-gray-100">
+              <tr>
+                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Fecha / Destino</th>
+                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Recibo</th>
+                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Entrega</th>
+                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Tasa</th>
+                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredTransactions.map(tx => (
+                <tr key={tx.id} className="hover:bg-gray-50 group">
+                  <td className="px-6 py-4">
+                    <div className="font-bold text-gray-800">{tx.clientName || 'Cliente sin nombre'}</div>
+                    <div className="text-[10px] text-gray-400">Trabajador: {workers.find(w => w.id === tx.workerId)?.name || 'Sin nombre'}</div>
+                    <div className="text-[10px] text-gray-400">{new Date(tx.date).toLocaleString()}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-1">
+                      <ArrowDownLeft size={12} className="text-emerald-500" />
+                      <span className="font-black">{tx.amount.toLocaleString()}</span>
+                      <span className="text-[10px] text-gray-400">{tx.currency}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-1">
+                      <ArrowUpRight size={12} className="text-rose-500" />
+                      <span className="font-black text-blue-600">{tx.totalCUP.toLocaleString()}</span>
+                      <span className="text-[10px] text-blue-300">{tx.targetCurrency}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 font-mono text-xs">1:{tx.rate}</td>
+                  <td className="px-6 py-4 text-right">
+                    <button onClick={() => onDelete(tx.id)} className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all"><Trash2 size={16}/></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const CajaView: React.FC<{ funds: Record<string, number>, referenceRates: Record<string, number> }> = ({ funds, referenceRates }) => {
   const activeCurrencies = ALL_CURRENCIES.filter(c => (funds[c] || 0) !== 0);
@@ -489,22 +561,55 @@ const SettingsView: React.FC<{
   pairs: CurrencyPair[], 
   onToggleFavorite: (id: string) => void, 
   onAddPair: (f: Currency, t: Currency) => void,
-  onResetRequest: () => void
-}> = ({ pairs, onToggleFavorite, onAddPair, onResetRequest }) => {
+  onResetRequest: () => void,
+  onRestoreData: (data: any) => void,
+  fullState: any
+}> = ({ pairs, onToggleFavorite, onAddPair, onResetRequest, onRestoreData, fullState }) => {
   const [from, setFrom] = useState<Currency>('USD');
   const [to, setTo] = useState<Currency>('CUP');
+
+  const handleExport = () => {
+    const blob = new Blob([JSON.stringify(fullState, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `remesacontrol_backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        if (data.transactions) {
+          onRestoreData(data);
+        } else {
+          alert("El archivo no tiene el formato correcto.");
+        }
+      } catch (err) {
+        alert("Archivo inválido o corrupto.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="max-w-2xl bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
       <h3 className="font-bold mb-6">Gestionar Pares de Divisas</h3>
-      <div className="flex gap-4 mb-8">
-        <select value={from} onChange={e => setFrom(e.target.value as Currency)} className="flex-1 px-4 py-2 bg-gray-50 rounded-xl font-bold">
-          {ALL_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <ArrowRight className="text-gray-300 self-center" />
-        <select value={to} onChange={e => setTo(e.target.value as Currency)} className="flex-1 px-4 py-2 bg-gray-50 rounded-xl font-bold">
-          {ALL_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <button onClick={() => onAddPair(from, to)} className="bg-blue-600 text-white p-2 rounded-xl"><Plus/></button>
+      <div className="flex flex-col sm:flex-row gap-4 mb-8">
+        <div className="flex flex-1 gap-2 items-center w-full">
+          <select value={from} onChange={e => setFrom(e.target.value as Currency)} className="flex-1 min-w-0 px-4 py-2 bg-gray-50 rounded-xl font-bold">
+            {ALL_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <ArrowRight className="text-gray-300 shrink-0" />
+          <select value={to} onChange={e => setTo(e.target.value as Currency)} className="flex-1 min-w-0 px-4 py-2 bg-gray-50 rounded-xl font-bold">
+            {ALL_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <button onClick={() => onAddPair(from, to)} className="bg-blue-600 text-white p-2 rounded-xl w-full sm:w-auto flex justify-center items-center"><Plus/></button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {pairs.map(p => (
@@ -516,6 +621,27 @@ const SettingsView: React.FC<{
       </div>
 
       <div className="mt-12 pt-8 border-t border-gray-100">
+        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <Download size={20} className="text-blue-500" /> Copias de Seguridad
+        </h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Exporta todos tus datos para guardarlos de forma segura, o importa un archivo de respaldo anterior.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <button 
+            onClick={handleExport}
+            className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-600 px-4 py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+          >
+            <Download size={18} /> Exportar Datos
+          </button>
+          <label className="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-600 px-4 py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer">
+            <Upload size={18} /> Importar Datos
+            <input type="file" accept=".json" className="hidden" onChange={handleImport} />
+          </label>
+        </div>
+      </div>
+
+      <div className="mt-12 pt-8 border-t border-gray-100">
         <h3 className="font-bold text-red-600 mb-4 flex items-center gap-2">
           <Trash2 size={20} /> Zona de Peligro
         </h3>
@@ -524,7 +650,7 @@ const SettingsView: React.FC<{
         </p>
         <button 
           onClick={onResetRequest} 
-          className="bg-red-50 hover:bg-red-100 text-red-600 px-6 py-3 rounded-xl font-bold transition-colors flex items-center gap-2"
+          className="bg-red-50 hover:bg-red-100 text-red-600 px-6 py-3 rounded-xl font-bold transition-colors flex items-center gap-2 w-full sm:w-auto justify-center"
         >
           <Trash2 size={18} /> Restablecer Configuración de Fábrica
         </button>
