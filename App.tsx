@@ -2,8 +2,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Transaction, Worker, CurrencyPair, Currency } from './types';
 import { INITIAL_CURRENCY_PAIRS, ALL_CURRENCIES } from './constants';
-import { auth, signInWithGoogle, logOut } from './firebase';
+import { auth, signInWithGoogle, logOut, db } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
+import { collection, doc, setDoc, addDoc, deleteDoc, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { 
   LayoutDashboard, 
   ArrowLeftRight, 
@@ -41,10 +42,7 @@ const App: React.FC = () => {
   const [funds, setFunds] = useState<Record<string, number>>({});
   
   // Base rates are now manually defined by the user as "Market/Reference" prices
-  const [referenceRates, setReferenceRates] = useState<Record<string, number>>(() => {
-    const saved = localStorage.getItem('referenceRates');
-    return saved ? JSON.parse(saved) : { 'CUP': 1, 'USD': 320, 'EUR': 330, 'MLC': 275 };
-  });
+  const [referenceRates, setReferenceRates] = useState<Record<string, number>>({ 'CUP': 1, 'USD': 320, 'EUR': 330, 'MLC': 275 });
 
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [showFundModal, setShowFundModal] = useState(false);
@@ -60,37 +58,60 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const saved = (key: string) => localStorage.getItem(key);
-    if (saved('transactions')) setTransactions(JSON.parse(saved('transactions')!));
-    if (saved('workers')) setWorkers(JSON.parse(saved('workers')!));
-    if (saved('pairs')) setPairs(JSON.parse(saved('pairs')!));
-    if (saved('funds')) setFunds(JSON.parse(saved('funds')!));
-  }, []);
+    if (!user) return;
 
-  useEffect(() => {
-    localStorage.setItem('transactions', JSON.stringify(transactions));
-    localStorage.setItem('workers', JSON.stringify(workers));
-    localStorage.setItem('pairs', JSON.stringify(pairs));
-    localStorage.setItem('funds', JSON.stringify(funds));
-    localStorage.setItem('referenceRates', JSON.stringify(referenceRates));
-  }, [transactions, workers, pairs, funds, referenceRates]);
+    const qTx = query(collection(db, 'transactions'), where('ownerId', '==', user.uid));
+    const unsubTx = onSnapshot(qTx, snap => {
+      setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Transaction)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    });
+
+    const qWk = query(collection(db, 'workers'), where('ownerId', '==', user.uid));
+    const unsubWk = onSnapshot(qWk, snap => {
+      setWorkers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Worker)));
+    });
+
+    const unsubSet = onSnapshot(doc(db, 'settings', user.uid), snap => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.funds) setFunds(data.funds);
+        if (data.referenceRates) setReferenceRates(data.referenceRates);
+        if (data.pairs) setPairs(data.pairs);
+      } else {
+        setDoc(doc(db, 'settings', user.uid), {
+          funds: {},
+          referenceRates: { 'CUP': 1, 'USD': 320, 'EUR': 330, 'MLC': 275 },
+          pairs: INITIAL_CURRENCY_PAIRS
+        });
+      }
+    });
+
+    return () => { unsubTx(); unsubWk(); unsubSet(); };
+  }, [user]);
+
+  const updateSettings = async (newSettings: Partial<{ funds: Record<string, number>, referenceRates: Record<string, number>, pairs: CurrencyPair[] }>) => {
+    if (!user) return;
+    await setDoc(doc(db, 'settings', user.uid), newSettings, { merge: true });
+  };
 
   const updateReferenceRate = (currency: string, value: number) => {
-    setReferenceRates(prev => ({ ...prev, [currency]: value }));
+    const newRates = { ...referenceRates, [currency]: value };
+    setReferenceRates(newRates);
+    updateSettings({ referenceRates: newRates });
   };
 
   const addReferenceRate = (currency: string) => {
     if (!referenceRates[currency]) {
-      setReferenceRates(prev => ({ ...prev, [currency]: 0 }));
+      const newRates = { ...referenceRates, [currency]: 0 };
+      setReferenceRates(newRates);
+      updateSettings({ referenceRates: newRates });
     }
   };
 
   const removeReferenceRate = (currency: string) => {
-    setReferenceRates(prev => {
-      const next = { ...prev };
-      delete next[currency];
-      return next;
-    });
+    const newRates = { ...referenceRates };
+    delete newRates[currency];
+    setReferenceRates(newRates);
+    updateSettings({ referenceRates: newRates });
   };
 
   const getSuggestedRate = (from: Currency, to: Currency) => {
@@ -100,60 +121,89 @@ const App: React.FC = () => {
     return Number((fromInCUP / toInCUP).toFixed(4));
   };
 
-  const addTransaction = (t: Omit<Transaction, 'id' | 'date'>) => {
-    const newTx: Transaction = {
-      ...t,
-      id: Math.random().toString(36).substr(2, 9),
-      date: new Date().toISOString()
+  const addTransaction = async (t: Omit<Transaction, 'id' | 'date'>) => {
+    if (!user) return;
+    const newFunds = {
+      ...funds,
+      [t.currency]: (funds[t.currency] || 0) + t.amount,
+      [t.targetCurrency]: (funds[t.targetCurrency] || 0) - t.totalCUP
     };
     
-    setFunds(prev => ({
-      ...prev,
-      [t.currency]: (prev[t.currency] || 0) + t.amount,
-      [t.targetCurrency]: (prev[t.targetCurrency] || 0) - t.totalCUP
-    }));
-
-    setTransactions([newTx, ...transactions]);
+    const batch = writeBatch(db);
+    const txRef = doc(collection(db, 'transactions'));
+    batch.set(txRef, { ...t, date: new Date().toISOString(), ownerId: user.uid });
+    batch.set(doc(db, 'settings', user.uid), { funds: newFunds }, { merge: true });
+    await batch.commit();
+    
     setShowTransactionModal(false);
   };
 
-  const adjustFunds = (currency: Currency, amount: number, type: 'ingreso' | 'egreso') => {
-    setFunds(prev => ({
-      ...prev,
-      [currency]: (prev[currency] || 0) + (type === 'ingreso' ? amount : -amount)
-    }));
+  const adjustFunds = async (currency: Currency, amount: number, type: 'ingreso' | 'egreso') => {
+    const newFunds = {
+      ...funds,
+      [currency]: (funds[currency] || 0) + (type === 'ingreso' ? amount : -amount)
+    };
+    setFunds(newFunds);
+    await updateSettings({ funds: newFunds });
     setShowFundModal(false);
   };
 
-  const deleteTransaction = (id: string) => {
+  const deleteTransaction = async (id: string) => {
+    if (!user) return;
     const tx = transactions.find(t => t.id === id);
     if (tx) {
-      setFunds(prev => ({
-        ...prev,
-        [tx.currency]: (prev[tx.currency] || 0) - tx.amount,
-        [tx.targetCurrency]: (prev[tx.targetCurrency] || 0) + tx.totalCUP
-      }));
+      const newFunds = {
+        ...funds,
+        [tx.currency]: (funds[tx.currency] || 0) - tx.amount,
+        [tx.targetCurrency]: (funds[tx.targetCurrency] || 0) + tx.totalCUP
+      };
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'transactions', id));
+      batch.set(doc(db, 'settings', user.uid), { funds: newFunds }, { merge: true });
+      await batch.commit();
     }
-    setTransactions(transactions.filter(t => t.id !== id));
   };
 
-  const resetToFactory = () => {
-    localStorage.clear();
-    setTransactions([]);
-    setWorkers([]);
-    setPairs(INITIAL_CURRENCY_PAIRS);
-    setFunds({});
-    setReferenceRates({ 'CUP': 1, 'USD': 320, 'EUR': 330, 'MLC': 275 });
+  const resetToFactory = async () => {
+    if (!user) return;
+    const batch = writeBatch(db);
+    transactions.forEach(tx => batch.delete(doc(db, 'transactions', tx.id)));
+    workers.forEach(w => batch.delete(doc(db, 'workers', w.id)));
+    batch.set(doc(db, 'settings', user.uid), {
+      funds: {},
+      referenceRates: { 'CUP': 1, 'USD': 320, 'EUR': 330, 'MLC': 275 },
+      pairs: INITIAL_CURRENCY_PAIRS
+    });
+    await batch.commit();
     setShowResetConfirm(false);
   };
 
-  const handleRestoreData = (data: any) => {
-    if (data.transactions) setTransactions(data.transactions);
-    if (data.workers) setWorkers(data.workers);
-    if (data.pairs) setPairs(data.pairs);
-    if (data.funds) setFunds(data.funds);
-    if (data.referenceRates) setReferenceRates(data.referenceRates);
-    alert("Datos restaurados correctamente");
+  const handleRestoreData = async (data: any) => {
+    if (!user) return;
+    const batch = writeBatch(db);
+    
+    if (data.transactions) {
+      data.transactions.forEach((tx: any) => {
+        batch.set(doc(db, 'transactions', tx.id), { ...tx, ownerId: user.uid });
+      });
+    }
+    if (data.workers) {
+      data.workers.forEach((w: any) => {
+        batch.set(doc(db, 'workers', w.id), { ...w, ownerId: user.uid });
+      });
+    }
+    
+    const newSettings: any = {};
+    if (data.funds) newSettings.funds = data.funds;
+    if (data.referenceRates) newSettings.referenceRates = data.referenceRates;
+    if (data.pairs) newSettings.pairs = data.pairs;
+    
+    if (Object.keys(newSettings).length > 0) {
+      batch.set(doc(db, 'settings', user.uid), newSettings, { merge: true });
+    }
+    
+    await batch.commit();
+    alert("Datos restaurados correctamente en la nube");
   };
 
   const profits = useMemo(() => {
@@ -294,13 +344,31 @@ const App: React.FC = () => {
           <CajaView funds={funds} referenceRates={referenceRates} />
         )}
         {activeTab === 'workers' && (
-          <WorkersView workers={workers} onAdd={(n, a) => setWorkers([...workers, { id: Math.random().toString(36).substr(2, 9), name: n, accountInfo: a }])} onDelete={(id) => setWorkers(workers.filter(w => w.id !== id))} />
+          <WorkersView 
+            workers={workers} 
+            onAdd={async (n, a) => {
+              if (!user) return;
+              await addDoc(collection(db, 'workers'), { name: n, accountInfo: a, ownerId: user.uid });
+            }} 
+            onDelete={async (id) => {
+              if (!user) return;
+              await deleteDoc(doc(db, 'workers', id));
+            }} 
+          />
         )}
         {activeTab === 'settings' && (
           <SettingsView 
             pairs={pairs} 
-            onToggleFavorite={(id) => setPairs(pairs.map(p => p.id === id ? { ...p, isFavorite: !p.isFavorite } : p))} 
-            onAddPair={(b, t) => setPairs([...pairs, { id: `${b}-${t}`, base: b, target: t, isFavorite: true }])} 
+            onToggleFavorite={(id) => {
+              const newPairs = pairs.map(p => p.id === id ? { ...p, isFavorite: !p.isFavorite } : p);
+              setPairs(newPairs);
+              updateSettings({ pairs: newPairs });
+            }} 
+            onAddPair={(b, t) => {
+              const newPairs = [...pairs, { id: `${b}-${t}`, base: b, target: t, isFavorite: true }];
+              setPairs(newPairs);
+              updateSettings({ pairs: newPairs });
+            }} 
             onResetRequest={() => setShowResetConfirm(true)}
             onRestoreData={handleRestoreData}
             fullState={{ transactions, workers, pairs, funds, referenceRates }}

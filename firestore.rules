@@ -3,28 +3,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: users
-    // Document ID: {userId}
-    // Fields:
-    //   - uid: string (required) - immutable
-    //   - email: string (required) - immutable
-    //   - displayName: string (optional)
-    //   - createdAt: timestamp (required) - immutable
-    //
-    // Collection: items
-    // Document ID: {itemId}
-    // Fields:
-    //   - id: string (optional)
-    //   - name: string (required)
-    //   - ownerId: string (required) - immutable
-    //   - createdAt: timestamp (required) - immutable
-    //
-    // ===============================================================
-
-    // ===============================================================
     // Helper Functions
     // ===============================================================
     
@@ -35,69 +13,65 @@ service cloud.firestore {
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
-    
-    function isDocOwner() {
-      return isAuthenticated() && request.auth.uid == resource.data.ownerId;
-    }
-    
-    function uidUnchanged() {
-      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
-    }
-    
-    function uidNotModified() {
-      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
-    }
-    
-    function hasRequiredFields(fields) {
-      return request.resource.data.keys().hasAll(fields);
-    }
-    
-    function isValidEmail(email) {
-      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
-    }
 
     // ===============================================================
     // Domain Validators
     // ===============================================================
 
-    function isValidUser() {
+    function isValidTransaction() {
       let data = request.resource.data;
-      return hasRequiredFields(['uid', 'email', 'createdAt']) &&
-             data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
-             data.email is string && isValidEmail(data.email) && data.email.size() < 100 &&
-             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
-             data.createdAt is timestamp;
+      return data.keys().hasAll(['clientName', 'workerId', 'amount', 'currency', 'targetCurrency', 'rate', 'totalCUP', 'date', 'ownerId']) &&
+             data.clientName is string && data.clientName.size() <= 100 &&
+             data.workerId is string && data.workerId.size() <= 100 &&
+             data.amount is number && data.amount >= 0 &&
+             data.currency is string && data.currency.size() <= 10 &&
+             data.targetCurrency is string && data.targetCurrency.size() <= 10 &&
+             data.rate is number && data.rate >= 0 &&
+             data.totalCUP is number && data.totalCUP >= 0 &&
+             data.date is string && data.date.size() <= 50 &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 500)) &&
+             (!('status' in data) || (data.status is string && data.status.size() <= 50)) &&
+             data.ownerId is string && data.ownerId == request.auth.uid;
     }
 
-    function isValidItem() {
+    function isValidWorker() {
       let data = request.resource.data;
-      return hasRequiredFields(['name', 'ownerId', 'createdAt']) &&
-             (!('id' in data) || (data.id is string && data.id.size() < 100)) &&
-             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
-             data.ownerId is string && data.ownerId.size() > 0 && data.ownerId.size() < 100 &&
-             data.createdAt is timestamp;
+      return data.keys().hasAll(['name', 'ownerId']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             (!('accountInfo' in data) || (data.accountInfo is string && data.accountInfo.size() <= 500)) &&
+             data.ownerId is string && data.ownerId == request.auth.uid;
+    }
+
+    function isValidSettings() {
+      let data = request.resource.data;
+      return (!('funds' in data) || data.funds is map) &&
+             (!('referenceRates' in data) || data.referenceRates is map) &&
+             (!('pairs' in data) || data.pairs is list);
     }
 
     // ===============================================================
     // Rules
     // ===============================================================
 
-    match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUser() && uidUnchanged();
-      allow update: if isOwner(userId) && isValidUser() && uidNotModified() && 
-                    request.resource.data.createdAt == resource.data.createdAt &&
-                    request.resource.data.email == resource.data.email;
-      allow delete: if isOwner(userId);
+    match /transactions/{txId} {
+      allow read: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidTransaction();
+      allow update: if isAuthenticated() && resource.data.ownerId == request.auth.uid && isValidTransaction() && request.resource.data.ownerId == resource.data.ownerId;
+      allow delete: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
     }
 
-    match /items/{itemId} {
+    match /workers/{workerId} {
       allow read: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
-      allow create: if isAuthenticated() && isValidItem() && request.resource.data.ownerId == request.auth.uid;
-      allow update: if isDocOwner() && isValidItem() && 
-                    request.resource.data.ownerId == resource.data.ownerId &&
-                    request.resource.data.createdAt == resource.data.createdAt;
-      allow delete: if isDocOwner();
+      allow create: if isAuthenticated() && isValidWorker();
+      allow update: if isAuthenticated() && resource.data.ownerId == request.auth.uid && isValidWorker() && request.resource.data.ownerId == resource.data.ownerId;
+      allow delete: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /settings/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidSettings();
+      allow update: if isOwner(userId) && isValidSettings();
+      allow delete: if isOwner(userId);
     }
   }
 }

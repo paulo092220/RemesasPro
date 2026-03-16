@@ -1,69 +1,49 @@
 {
   "entities": {
-    "User": {
-      "title": "User",
-      "description": "A user of the application.",
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A remittance transaction.",
       "type": "object",
       "properties": {
-        "uid": {
-          "type": "string",
-          "description": "The user's unique ID."
-        },
-        "email": {
-          "type": "string",
-          "format": "email",
-          "description": "The user's email address."
-        },
-        "displayName": {
-          "type": "string",
-          "description": "The user's display name."
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "The time the user was created."
-        }
+        "clientName": { "type": "string" },
+        "workerId": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "targetCurrency": { "type": "string" },
+        "rate": { "type": "number" },
+        "totalCUP": { "type": "number" },
+        "description": { "type": "string" },
+        "status": { "type": "string" },
+        "date": { "type": "string" },
+        "ownerId": { "type": "string" }
       },
-      "required": ["uid", "email", "createdAt"]
+      "required": ["clientName", "workerId", "amount", "currency", "targetCurrency", "rate", "totalCUP", "date", "ownerId"]
     },
-    "Item": {
-      "title": "Item",
-      "description": "A sample item created by a user.",
+    "Worker": {
+      "title": "Worker",
+      "description": "A worker/beneficiary.",
       "type": "object",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "The item's unique ID."
-        },
-        "name": {
-          "type": "string",
-          "description": "The name of the item."
-        },
-        "ownerId": {
-          "type": "string",
-          "description": "The ID of the user who owns this item."
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "The time the item was created."
-        }
+        "name": { "type": "string" },
+        "accountInfo": { "type": "string" },
+        "ownerId": { "type": "string" }
       },
-      "required": ["name", "ownerId", "createdAt"]
+      "required": ["name", "ownerId"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "User settings (funds, rates, pairs).",
+      "type": "object",
+      "properties": {
+        "funds": { "type": "object" },
+        "referenceRates": { "type": "object" },
+        "pairs": { "type": "array" }
+      }
     }
   },
   "firestore": {
-    "/users/{userId}": {
-      "schema": {
-        "$ref": "#/entities/User"
-      },
-      "description": "Stores user profiles."
-    },
-    "/items/{itemId}": {
-      "schema": {
-        "$ref": "#/entities/Item"
-      },
-      "description": "Stores sample items."
-    }
+    "/transactions/{txId}": { "schema": { "$ref": "#/entities/Transaction" }, "description": "Transactions" },
+    "/workers/{workerId}": { "schema": { "$ref": "#/entities/Worker" }, "description": "Workers" },
+    "/settings/{userId}": { "schema": { "$ref": "#/entities/Settings" }, "description": "User settings" }
   }
 }
