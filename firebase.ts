@@ -1,13 +1,23 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import firebaseConfig from './firebase-applet-config.json';
+
+// Reemplaza estos valores con los de tu consola de Firebase
+// (Project Settings > General > Your apps)
+const firebaseConfig = {
+  apiKey: "TU_API_KEY",
+  authDomain: "tu-proyecto.firebaseapp.com",
+  projectId: "tu-proyecto-id",
+  storageBucket: "tu-proyecto.appspot.com",
+  messagingSenderId: "tu-sender-id",
+  appId: "tu-app-id"
+};
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = getFirestore(app);
 
 // Initialize Auth
 export const auth = getAuth(app);
