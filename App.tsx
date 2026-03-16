@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Transaction, Worker, CurrencyPair, Currency } from './types';
 import { INITIAL_CURRENCY_PAIRS, ALL_CURRENCIES } from './constants';
+import { auth, signInWithGoogle, logOut } from './firebase';
+import { onAuthStateChanged, User } from 'firebase/auth';
 import { 
   LayoutDashboard, 
   ArrowLeftRight, 
@@ -22,12 +24,16 @@ import {
   X,
   Download,
   Upload,
-  FileText
+  FileText,
+  LogOut
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const App: React.FC = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+
   const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'workers' | 'caja' | 'settings'>('dashboard');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
@@ -44,6 +50,14 @@ const App: React.FC = () => {
   const [showFundModal, setShowFundModal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     const saved = (key: string) => localStorage.getItem(key);
@@ -160,6 +174,30 @@ const App: React.FC = () => {
     return { cup: totalCUP, usd: totalUSD, eur: totalEUR };
   }, [transactions, referenceRates]);
 
+  if (!isAuthReady) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50"><p className="text-gray-500 font-bold">Cargando...</p></div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center space-y-6">
+          <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Banknote size={32} />
+          </div>
+          <h1 className="text-2xl font-black text-gray-900">RemesaControl</h1>
+          <p className="text-gray-500">Inicia sesión para gestionar tus remesas y sincronizar tus datos en la nube.</p>
+          <button 
+            onClick={signInWithGoogle}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+          >
+            Iniciar sesión con Google
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-gray-50 text-gray-900">
       {/* Mobile Header */}
@@ -181,6 +219,10 @@ const App: React.FC = () => {
           <NavItem icon={<Wallet size={20} />} label="Mi Caja" active={activeTab === 'caja'} onClick={() => { setActiveTab('caja'); setIsMobileMenuOpen(false); }} />
           <NavItem icon={<Users size={20} />} label="Trabajadores" active={activeTab === 'workers'} onClick={() => { setActiveTab('workers'); setIsMobileMenuOpen(false); }} />
           <NavItem icon={<Settings size={20} />} label="Configuración" active={activeTab === 'settings'} onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }} />
+          <button onClick={logOut} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-red-500 hover:bg-red-50 mt-4 border border-red-100">
+            <LogOut size={20} />
+            <span>Cerrar Sesión</span>
+          </button>
         </div>
       )}
 
@@ -199,6 +241,19 @@ const App: React.FC = () => {
           <NavItem icon={<Users size={20} />} label="Trabajadores" active={activeTab === 'workers'} onClick={() => setActiveTab('workers')} />
           <NavItem icon={<Settings size={20} />} label="Configuración" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
         </nav>
+        <div className="p-4 border-t border-gray-100">
+          <div className="flex items-center gap-3 mb-4 px-2">
+            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email}`} alt="User" className="w-8 h-8 rounded-full" referrerPolicy="no-referrer" />
+            <div className="overflow-hidden">
+              <p className="text-sm font-bold truncate">{user.displayName || 'Usuario'}</p>
+              <p className="text-xs text-gray-500 truncate">{user.email}</p>
+            </div>
+          </div>
+          <button onClick={logOut} className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl transition-all text-red-500 hover:bg-red-50 border border-red-100 text-sm font-bold">
+            <LogOut size={16} />
+            Cerrar Sesión
+          </button>
+        </div>
       </aside>
 
       <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 max-w-7xl mx-auto w-full">
