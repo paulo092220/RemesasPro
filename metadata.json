@@ -1,0 +1,7 @@
+{
+  "name": "RemesaControl Pro",
+  "description": "Sistema avanzado para el control de remesas con integración de tasas de cambio en tiempo real de El Toque y gestión de trabajadores.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
