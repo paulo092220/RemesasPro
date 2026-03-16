@@ -31,6 +31,7 @@ export interface Transaction {
   id: string;
   date: string;
   workerId: string;
+  clientName: string;
   amount: number;
   currency: Currency;
   targetCurrency: Currency;

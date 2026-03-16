@@ -17,7 +17,9 @@ import {
   Banknote, 
   Coins, 
   Trash2,
-  Edit3
+  Edit3,
+  Menu,
+  X
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -36,6 +38,7 @@ const App: React.FC = () => {
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [showFundModal, setShowFundModal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const saved = (key: string) => localStorage.getItem(key);
@@ -55,6 +58,20 @@ const App: React.FC = () => {
 
   const updateReferenceRate = (currency: string, value: number) => {
     setReferenceRates(prev => ({ ...prev, [currency]: value }));
+  };
+
+  const addReferenceRate = (currency: string) => {
+    if (!referenceRates[currency]) {
+      setReferenceRates(prev => ({ ...prev, [currency]: 0 }));
+    }
+  };
+
+  const removeReferenceRate = (currency: string) => {
+    setReferenceRates(prev => {
+      const next = { ...prev };
+      delete next[currency];
+      return next;
+    });
   };
 
   const getSuggestedRate = (from: Currency, to: Currency) => {
@@ -131,6 +148,28 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-gray-50 text-gray-900">
+      {/* Mobile Header */}
+      <div className="md:hidden bg-white border-b border-gray-200 px-4 h-16 flex justify-between items-center sticky top-0 z-40">
+        <h1 className="text-xl font-bold text-blue-600 flex items-center gap-2">
+          <Banknote className="text-blue-500" />
+          RemesaControl
+        </h1>
+        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-gray-600 p-1">
+          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
+      </div>
+
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 top-16 bg-white z-40 p-4 space-y-2 overflow-y-auto">
+          <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }} />
+          <NavItem icon={<ArrowLeftRight size={20} />} label="Remesas" active={activeTab === 'transactions'} onClick={() => { setActiveTab('transactions'); setIsMobileMenuOpen(false); }} />
+          <NavItem icon={<Wallet size={20} />} label="Mi Caja" active={activeTab === 'caja'} onClick={() => { setActiveTab('caja'); setIsMobileMenuOpen(false); }} />
+          <NavItem icon={<Users size={20} />} label="Trabajadores" active={activeTab === 'workers'} onClick={() => { setActiveTab('workers'); setIsMobileMenuOpen(false); }} />
+          <NavItem icon={<Settings size={20} />} label="Configuración" active={activeTab === 'settings'} onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }} />
+        </div>
+      )}
+
       {/* Sidebar Desktop */}
       <aside className="hidden md:flex flex-col w-64 bg-white border-r border-gray-200 h-screen sticky top-0">
         <div className="p-6 border-b border-gray-100">
@@ -173,6 +212,8 @@ const App: React.FC = () => {
             transactions={transactions} 
             referenceRates={referenceRates}
             onUpdateRate={updateReferenceRate}
+            onAddRate={addReferenceRate}
+            onRemoveRate={removeReferenceRate}
             profits={profits}
             funds={funds}
           />
@@ -235,9 +276,15 @@ const DashboardView: React.FC<{
   transactions: Transaction[], 
   referenceRates: Record<string, number>,
   onUpdateRate: (curr: string, val: number) => void,
+  onAddRate: (curr: string) => void,
+  onRemoveRate: (curr: string) => void,
   profits: { cup: number, usd: number, eur: number },
   funds: Record<string, number>
-}> = ({ transactions, referenceRates, onUpdateRate, profits, funds }) => {
+}> = ({ transactions, referenceRates, onUpdateRate, onAddRate, onRemoveRate, profits, funds }) => {
+  const [newRateCurrency, setNewRateCurrency] = useState<string>('');
+  const activeRates = Object.keys(referenceRates).filter(c => c !== 'CUP');
+  const availableToAdd = ALL_CURRENCIES.filter(c => c !== 'CUP' && !activeRates.includes(c));
+
   return (
     <div className="space-y-8">
       {/* Profits Section */}
@@ -263,15 +310,40 @@ const DashboardView: React.FC<{
 
       {/* Manual Reference Rates Management */}
       <section className="space-y-4">
-        <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
-          <Edit3 size={14} className="text-blue-500" /> Definir Tasas de Referencia (CUP)
-        </h3>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+            <Edit3 size={14} className="text-blue-500" /> Definir Tasas de Referencia (CUP)
+          </h3>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <select 
+              value={newRateCurrency} 
+              onChange={e => setNewRateCurrency(e.target.value)}
+              className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold flex-1 sm:flex-none"
+            >
+              <option value="">Añadir divisa...</option>
+              {availableToAdd.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <button 
+              onClick={() => { if (newRateCurrency) { onAddRate(newRateCurrency); setNewRateCurrency(''); } }}
+              disabled={!newRateCurrency}
+              className="bg-blue-600 disabled:bg-gray-300 text-white px-3 py-2 rounded-lg"
+            >
+              <Plus size={18} />
+            </button>
+          </div>
+        </div>
         <p className="text-xs text-gray-500 bg-blue-50 p-3 rounded-xl border border-blue-100">
           Define aquí el valor real/mercado de cada divisa. Esto servirá como base para calcular tus ganancias y sugerir tasas en las remesas.
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {ALL_CURRENCIES.filter(c => c !== 'CUP').map(curr => (
-            <div key={curr} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm space-y-2">
+          {activeRates.map(curr => (
+            <div key={curr} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm space-y-2 relative group">
+              <button 
+                onClick={() => onRemoveRate(curr)}
+                className="absolute top-2 right-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Trash2 size={14} />
+              </button>
               <label className="text-[10px] font-black text-gray-400 uppercase">{curr} vs CUP</label>
               <input 
                 type="number" 
@@ -329,7 +401,8 @@ const TransactionsView: React.FC<{ transactions: Transaction[], workers: Worker[
           {transactions.map(tx => (
             <tr key={tx.id} className="hover:bg-gray-50 group">
               <td className="px-6 py-4">
-                <div className="font-bold text-gray-800">{workers.find(w => w.id === tx.workerId)?.name || 'Sin nombre'}</div>
+                <div className="font-bold text-gray-800">{tx.clientName || 'Cliente sin nombre'}</div>
+                <div className="text-[10px] text-gray-400">Trabajador: {workers.find(w => w.id === tx.workerId)?.name || 'Sin nombre'}</div>
                 <div className="text-[10px] text-gray-400">{new Date(tx.date).toLocaleString()}</div>
               </td>
               <td className="px-6 py-4">
@@ -466,6 +539,7 @@ const TransactionModal: React.FC<{
   workers: Worker[],
   getSuggestedRate: (f: Currency, t: Currency) => number
 }> = ({ onClose, onSubmit, workers, getSuggestedRate }) => {
+  const [clientName, setClientName] = useState('');
   const [amount, setAmount] = useState('');
   const [from, setFrom] = useState<Currency>('USD');
   const [to, setTo] = useState<Currency>('CUP');
@@ -485,7 +559,11 @@ const TransactionModal: React.FC<{
           <h3 className="text-2xl font-black">Registrar Remesa</h3>
           <button onClick={onClose}><Plus className="rotate-45" size={24}/></button>
         </div>
-        <form onSubmit={e => { e.preventDefault(); onSubmit({ workerId, amount: Number(amount), currency: from, targetCurrency: to, rate, totalCUP: total, description: '', status: 'completado' }); }} className="p-8 space-y-6">
+        <form onSubmit={e => { e.preventDefault(); onSubmit({ clientName, workerId, amount: Number(amount), currency: from, targetCurrency: to, rate, totalCUP: total, description: '', status: 'completado' }); }} className="p-8 space-y-6">
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-gray-400 uppercase">Nombre del Cliente</label>
+            <input type="text" required value={clientName} onChange={e => setClientName(e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-bold outline-none" placeholder="Ej. Juan Pérez" />
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-[10px] font-black text-gray-400 uppercase">Recibes</label>
