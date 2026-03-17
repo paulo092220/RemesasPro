@@ -23,21 +23,13 @@ import {
   Users, 
   Settings, 
   Plus, 
-  Coins, 
   Wallet, 
-  ArrowRight, 
-  ArrowUpRight, 
-  ArrowDownLeft, 
   Banknote, 
   Trash2,
-  Edit3,
   Menu,
   X,
-  Download,
-  Upload,
   FileText,
-  LogOut,
-  Star
+  LogOut
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -58,24 +50,31 @@ const App: React.FC = () => {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // --- EFECTOS DE AUTENTICACIÓN ---
+  // --- EFECTOS DE AUTENTICACIÓN (CORREGIDO) ---
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setIsAuthReady(true);
-    });
+    let unsubscribe: () => void;
 
-    getRedirectResult(auth)
-      .then((result) => {
-        if (result?.user) {
-          setUser(result.user);
-        }
-      })
-      .catch((error) => {
-        console.error("Error al volver del inicio de sesión:", error);
+    const initAuth = async () => {
+      try {
+        // 1. Primero esperamos a ver si venimos de una redirección de Google
+        // Esto evita que React se adelante y muestre la pantalla de Login
+        await getRedirectResult(auth);
+      } catch (error) {
+        console.error("Error procesando redirección de Firebase:", error);
+      }
+
+      // 2. Una vez resuelta la redirección, encendemos el listener normal
+      unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        setUser(currentUser);
+        setIsAuthReady(true); // Solo aquí quitamos la pantalla de carga
       });
+    };
 
-    return () => unsubscribe();
+    initAuth();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   // --- EFECTOS DE DATOS (FIRESTORE) ---
