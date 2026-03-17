@@ -2,7 +2,36 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Transaction, Worker, CurrencyPair, Currency } from './types';
 import { INITIAL_CURRENCY_PAIRS, ALL_CURRENCIES } from './constants';
+// ... (tus otros imports se mantienen igual)
 import { auth, signInWithGoogle, logOut, db } from './firebase';
+import { onAuthStateChanged, User, getRedirectResult } from 'firebase/auth'; // <--- Añadido getRedirectResult
+
+const App: React.FC = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+
+  useEffect(() => {
+    // 1. Escuchar el estado de autenticación normal
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAuthReady(true);
+    });
+
+    // 2. DETECTOR CRUCIAL PARA MÓVILES: Capturar el resultado al volver de la redirección
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          setUser(result.user);
+        }
+      })
+      .catch((error) => {
+        console.error("Error al volver del inicio de sesión:", error);
+      });
+
+    return () => unsubscribe();
+  }, []);
+
+  // ... (el resto de tu componente se mantiene igual)
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, doc, setDoc, addDoc, deleteDoc, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { 

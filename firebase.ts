@@ -1,12 +1,26 @@
+// ... (configuración inicial igual)
+
+// ...
+
+
+
 
 import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  GoogleAuthProvider, 
-  signInWithRedirect, // Cambiado para mejor compatibilidad móvil
-  getRedirectResult, 
-  signOut 
-} from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithRedirect, signOut } from 'firebase/auth';
+
+export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+export const signInWithGoogle = async () => {
+  try {
+    // Cambiamos Popup por Redirect para que no se bloquee en móviles
+    await signInWithRedirect(auth, googleProvider);
+  } catch (error) {
+    console.error("Error al iniciar sesión", error);
+    throw error;
+  }
+};
 import { getFirestore } from 'firebase/firestore';
 import { getAnalytics } from "firebase/analytics";
 
