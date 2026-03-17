@@ -1,26 +1,5 @@
-// ... (configuración inicial igual)
-
-// ...
-
-
-
-
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithRedirect, signOut } from 'firebase/auth';
-
-export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: 'select_account' });
-
-export const signInWithGoogle = async () => {
-  try {
-    // Cambiamos Popup por Redirect para que no se bloquee en móviles
-    await signInWithRedirect(auth, googleProvider);
-  } catch (error) {
-    console.error("Error al iniciar sesión", error);
-    throw error;
-  }
-};
 import { getFirestore } from 'firebase/firestore';
 import { getAnalytics } from "firebase/analytics";
 
@@ -34,19 +13,22 @@ const firebaseConfig = {
   measurementId: "G-NKLC3P46F4"
 };
 
-// Inicializar Firebase
+// 1. Inicializar Firebase (Solo una vez)
 const app = initializeApp(firebaseConfig);
+
+// 2. Exportar instancias de servicios
 export const analytics = getAnalytics(app);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
+// 3. Configurar Proveedor de Google
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-// Función para iniciar sesión optimizada para móviles
+// 4. Función para iniciar sesión (Optimizado para móviles con Redirect)
 export const signInWithGoogle = async () => {
   try {
-    // En móviles, esto redirigirá la pestaña actual en lugar de abrir una nueva
+    // Usamos Redirect para evitar que navegadores móviles bloqueen el popup
     await signInWithRedirect(auth, googleProvider);
   } catch (error) {
     console.error("Error al iniciar sesión con Google", error);
@@ -54,7 +36,7 @@ export const signInWithGoogle = async () => {
   }
 };
 
-// Función para cerrar sesión
+// 5. Función para cerrar sesión
 export const logOut = async () => {
   try {
     await signOut(auth);
